@@ -50,7 +50,7 @@ async def analyze_property_image_github(image_bytes: bytes) -> dict:
     }
 
 # ── THE ABSTRACTION ROUTER
-async def analyze_image_async(image_bytes: bytes) -> dict:
+async def analyze_image(image_bytes: bytes) -> dict:
     """Routes the image to the active provider. Protects against rate limits and expiry."""
     if not image_bytes or len(image_bytes) < 100:
         print("👁️ Vision Engine: No image provided. Applying baseline.")
@@ -81,4 +81,5 @@ async def analyze_image_async(image_bytes: bytes) -> dict:
             
     except Exception as e:
         print(f"⚠️ Vision Engine Failed: {str(e)}")
+
         return FALLBACK
