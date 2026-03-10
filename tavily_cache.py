@@ -1,74 +1,52 @@
-import hashlib
 import json
 import os
-import streamlit as st
+import logging
 from upstash_redis import Redis
 from tavily import TavilyClient
-from dotenv import load_dotenv
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-@st.cache_resource
-def get_redis():
-    """Initializes the persistent connection to the Upstash Cloud."""
-    url = os.getenv("UPSTASH_REDIS_REST_URL")
-    token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-    if not url or not token:
-        print("⚠️ Upstash credentials missing. Caching offline.")
-        return None
-    return Redis(url=url, token=token)
-
-@st.cache_resource
-def get_tavily():
-    return TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-
-def make_cache_key(area: str, bedrooms: int, budget_aed: float) -> str:
-    """Normalizes the budget into AED 500K bands to maximize cache hits."""
+def search_comparables(query: str):
+    """Searches Tavily for live property listings with Upstash Redis caching."""
     try:
-        budget_band = (int(budget_aed) // 500000) * 500000
-    except:
-        budget_band = 0
-    raw = f"{area.lower().strip()}:{bedrooms}:{budget_band}"
-    return f"tavily:{hashlib.md5(raw.encode()).hexdigest()}"
+        # 1. Load keys directly from the cloud environment (No Streamlit)
+        tavily_key = os.environ.get("TAVILY_API_KEY")
+        redis_url = os.environ.get("UPSTASH_REDIS_REST_URL")
+        redis_token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
 
-def search_comparables(area: str, bedrooms: int, budget_aed: float, is_offplan: bool = False, ttl_seconds: int = 86400) -> list:
-    """The Upgraded Scraper: Checks Cloud Memory first, scrapes only if necessary."""
-    redis = get_redis()
-    cache_key = make_cache_key(area, bedrooms, budget_aed)
+        if not tavily_key:
+            logger.error("Tavily API key is missing.")
+            return {"results": []}
 
-    # 1. ATTEMPT CACHE RETRIEVAL (Zero Cost, 0 Latency)
-    if redis:
-        try:
-            cached_result = redis.get(cache_key)
-            if cached_result:
-                print(f"🟢 Market Scout: CACHE HIT! Serving free data for [{cache_key}]")
-                return json.loads(cached_result)
-        except Exception as e:
-            print(f"⚠️ Redis read error: {e}")
-
-    # 2. CACHE MISS: DEPLOY LIVE SCRAPER (Costs API Credits)
-    print("🔴 Market Scout: CACHE MISS. Deploying Live Tavily Scraper...")
-    client = get_tavily()
-    
-    try:
-        query = f"{bedrooms} bedroom apartment for sale in {area} Dubai"
-        raw_results = client.search(query=query, search_depth="advanced", max_results=3)
+        tavily_client = TavilyClient(api_key=tavily_key)
         
-        listings = []
-        for r in raw_results.get('results', []):
-            listings.append({
-                "title": r.get('title', 'Property Listing'),
-                "url": r.get('url', '')
-            })
+        # 2. Connect to Redis Cache
+        redis_client = None
+        if redis_url and redis_token:
+            redis_client = Redis(url=redis_url, token=redis_token)
+
+        cache_key = f"tavily_comps:{query.replace(' ', '_').lower()}"
+
+        # 3. Check Cache
+        if redis_client:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info("Tavily Cache HIT")
+                return json.loads(cached_data) if isinstance(cached_data, str) else cached_data
+
+        # 4. Fetch Live Data
+        logger.info("Tavily Cache MISS. Fetching live market data...")
+        response = tavily_client.search(
+            query=query, 
+            search_depth="advanced"
+        )
+
+        # 5. Save to Cache
+        if redis_client and response:
+            redis_client.set(cache_key, json.dumps(response))
             
-        # 3. SAVE TO CACHE FOR NEXT USER (Persists for 24 hours)
-        if redis and listings:
-            try:
-                redis.set(cache_key, json.dumps(listings), ex=ttl_seconds)
-            except Exception as e:
-                print(f"⚠️ Redis write error: {e}")
-                
-        return listings
+        return response
+        
     except Exception as e:
-        print(f"⚠️ Tavily Scraper Blocked: {e}")
-        return [{"title": "Offline Fallback Data", "url": "https://dubailand.gov.ae"}]
+        logger.error(f"Tavily search failed: {str(e)}")
+        return {"results": []}
