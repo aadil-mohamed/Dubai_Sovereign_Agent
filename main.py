@@ -23,7 +23,7 @@ async def analyze(q: Query):
         graph = build_graph()
         
         # THE FIX: We must pass 'query', not 'raw_query'
-        result = graph.invoke({
+        result = await graph.ainvoke({
             "query": q.query,
             "image_bytes": None
         })
