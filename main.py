@@ -1,68 +1,52 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
-import traceback
 
 app = FastAPI()
-
-# Start empty so the server boots in 0.1 seconds
-GRAPH_ENGINE = None
 
 class Query(BaseModel):
     query: str
     image: str = None
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 @app.post("/api/analyze")
 async def analyze(q: Query):
-    global GRAPH_ENGINE
-    
     try:
-        # Lazy load: Only build the brain when the first query comes in
-        if GRAPH_ENGINE is None:
-            print("IGNITING SOVEREIGN INTELLIGENCE ENGINE...")
-            from graph import build_graph 
-            GRAPH_ENGINE = build_graph()
-            
-        result = await GRAPH_ENGINE.ainvoke({
+        from agents import build_graph
+        graph = build_graph()
+        result = graph.invoke({
             "raw_query": q.query,
             "image_bytes": None
         })
-        
-        return {
-            "grade": result["supervisor_result"]["investment_grade"],
-            "baseVal": result["ml_result"]["base_price_aed"],
-            "adjustedVal": result["financial_result"]["adjusted_price_aed"],
-            "roi": result["financial_result"]["roi_percent"],
-            "multiplier": result["vision_result"]["multiplier"],
-            "goldenVisa": result["legal_result"]["golden_visa_eligible"],
-            "dldFee": result["legal_result"]["dld_fee_aed"],
-            "commission": result["legal_result"]["commission_aed"],
+        return JSONResponse({
+            "grade": result["supervisor_result"].get("investment_grade","C"),
+            "baseVal": result["ml_result"].get("base_price_aed", 0),
+            "adjustedVal": result["financial_result"].get("adjusted_price_aed", 0),
+            "roi": result["financial_result"].get("roi_percent", 0),
+            "multiplier": result["vision_result"].get("multiplier", 1.0),
+            "goldenVisa": result["legal_result"].get("golden_visa_eligible", False),
+            "dldFee": result["legal_result"].get("dld_fee_aed", 0),
+            "commission": result["legal_result"].get("commission_aed", 0),
             "outOfMarket": result.get("out_of_market", False),
-            "summary": result["supervisor_result"]["executive_summary"],
-            "topRisk": result["supervisor_result"]["top_risk"],
-            "listings": result["market_result"]["comparables"],
+            "summary": result["supervisor_result"].get("executive_summary",""),
+            "topRisk": result["supervisor_result"].get("top_risk",""),
+            "listings": result["market_result"].get("comparables", []),
             "agentLog": result.get("agent_log", [])
-        }
-        
+        })
     except Exception as e:
-        # If ANYTHING fails, catch it and send it to the UI
-        error_msg = f"SYSTEM FAILURE: {str(e)}"
-        print("CRITICAL PIPELINE ERROR:")
-        print(traceback.format_exc())
-        
-        return {
-            "grade": "D",
-            "outOfMarket": True,
-            "summary": error_msg,
-            "baseVal": 0, "adjustedVal": 0, "roi": 0, "multiplier": 1.0,
-            "goldenVisa": False, "dldFee": 0, "commission": 0,
-            "topRisk": "Backend connection failed. Check Render Logs.",
-            "listings": [], 
-            "agentLog": [{"agent": "supervisor", "ms": 0, "out": error_msg}]
-        }
+        import traceback
+        return JSONResponse(
+            {"error": str(e), "trace": traceback.format_exc()},
+            status_code=500
+        )
 
-# Serve React build
+# StaticFiles MUST be mounted LAST
+# This is the fix — it was intercepting /api/analyze
 app.mount("/", StaticFiles(directory="propiq-ui/dist", html=True), name="static")
 
 if __name__ == "__main__":
