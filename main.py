@@ -18,7 +18,7 @@ async def health():
 @app.post("/api/analyze")
 async def analyze(q: Query):
     try:
-        from agents import build_graph
+        from graph import build_graph
         graph = build_graph()
         result = graph.invoke({
             "raw_query": q.query,
