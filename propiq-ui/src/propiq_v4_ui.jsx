@@ -262,6 +262,31 @@ export default function PropIQ() {
   }, [phase, query, preview, addRipple]);
 
   const reset = () => { setPhase("idle"); setResult(null); setLog([]); setSt({}); setGA(false); };
+  const downloadPDF = async () => {
+  if (!result) return;
+  try {
+    const res = await fetch("/api/pdf", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ ...result, query })
+    });
+
+    if (!res.ok) throw new Error("PDF failed");
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "PropIQ_Sovereign_Dossier.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error(err);
+    alert("Failed to generate PDF dossier.");
+  }
+};
 
   return (
     <div style={{ minHeight:"100vh", background:"#060605", fontFamily:"'DM Mono',monospace", color:"#E8E0D0", position:"relative", overflowX:"hidden" }}>
@@ -443,7 +468,7 @@ export default function PropIQ() {
 
           <div style={{ marginBottom:16 }}><ThoughtLog entries={log} running={false}/></div>
 
-          <button style={{ width:"100%", padding:"19px", background:"rgba(201,168,76,0.07)", border:"1.5px solid rgba(201,168,76,0.45)", color:"#C9A84C", fontSize:11, letterSpacing:"0.42em", fontFamily:"'DM Mono',monospace", fontWeight:700, cursor:"pointer", transition:"all 0.3s" }} onMouseEnter={e=>{e.currentTarget.style.background="rgba(201,168,76,0.13)";e.currentTarget.style.boxShadow="0 0 50px rgba(201,168,76,0.2)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(201,168,76,0.07)";e.currentTarget.style.boxShadow="none";}}>↓  FORGE INSTITUTIONAL PDF DOSSIER  —  REPORTLAB</button>
+          <button onClick={downloadPDF} style={{ width:"100%", padding:"19px", background:"rgba(201,168,76,0.07)", border:"1.5px solid rgba(201,168,76,0.45)", color:"#C9A84C", fontSize:11, letterSpacing:"0.42em", fontFamily:"'DM Mono',monospace", fontWeight:700, cursor:"pointer", transition:"all 0.3s" }} onMouseEnter={e=>{e.currentTarget.style.background="rgba(201,168,76,0.13)";e.currentTarget.style.boxShadow="0 0 50px rgba(201,168,76,0.2)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(201,168,76,0.07)";e.currentTarget.style.boxShadow="none";}}>↓  FORGE INSTITUTIONAL PDF DOSSIER  —  REPORTLAB</button>
         </div>
       )}
 
