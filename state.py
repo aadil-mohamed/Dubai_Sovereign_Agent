@@ -15,7 +15,7 @@ class AgentState(BaseModel):
     listings: List[dict] = Field(default_factory=list)
     legal_flags: List[str] = Field(default_factory=list)
     debate_log: List[str] = Field(default_factory=list)
-    final_verdict: str = ""
+    final_verdict: Optional[str] = ""
     
     out_of_market: Optional[bool] = False
     market_warning: Optional[str] = ""
