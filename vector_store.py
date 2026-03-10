@@ -2,7 +2,7 @@ import os
 import logging
 from supabase import create_client, Client
 from langchain_community.vectorstores import SupabaseVectorStore
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,11 @@ class PropIQVectorStore:
         self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
         
         # 384-dimension embedding model matching your Supabase VECTOR(384) schema
-        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        self.table_name = "propiq_documents"
+        self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+            api_key=os.environ.get("HF_TOKEN"),
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+       )
+       self.table_name = "propiq_documents"
 
     def get_store(self) -> SupabaseVectorStore:
         return SupabaseVectorStore(
@@ -55,4 +58,5 @@ class PropIQVectorStore:
             return []
 
 # Singleton instance for the agent to import
+
 vector_db = PropIQVectorStore()
