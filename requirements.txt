@@ -4,7 +4,6 @@ langchain-core
 langgraph
 groq
 supabase
-sentence-transformers
 tavily-python
 pandas
 scikit-learn
@@ -15,3 +14,4 @@ upstash-redis
 fpdf
 fastapi==0.111.0
 uvicorn==0.30.1
+
