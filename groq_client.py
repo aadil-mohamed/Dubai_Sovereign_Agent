@@ -1,6 +1,5 @@
 import os
 import json
-import streamlit as st
 from groq import Groq
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type, before_sleep_log
 import logging
@@ -9,7 +8,6 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-@st.cache_resource
 def get_groq_client():
     """Initializes the Groq client once and stores it in cache."""
     return Groq(api_key=os.getenv("GROQ_API_KEY"))
