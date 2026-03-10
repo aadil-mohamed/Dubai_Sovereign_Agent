@@ -5,6 +5,9 @@ from pydantic import BaseModel
 from typing import Optional
 import uvicorn
 import json
+from fastapi.responses import FileResponse
+from pdf_tool import generate_investment_dossier
+import uuid
 
 app = FastAPI()
 
@@ -67,7 +70,34 @@ async def analyze(q: Query):
             {"error": str(e), "trace": traceback.format_exc()},
             status_code=500
         )
+@app.post("/api/pdf")
+async def create_pdf(payload: dict):
+    try:
+        # Map your React data back to what the PDF tool expects
+        state_data = {
+            "area": payload.get("query", "Dubai Real Estate Query"),
+            "bedrooms": "See Query",
+            "budget_aed": 0.0,
+            "ml_price": payload.get("baseVal", 0.0),
+            "cv_multiplier": payload.get("multiplier", 1.0),
+            "final_verdict": json.dumps({
+                "investment_grade": payload.get("grade", "N/A"),
+                "executive_summary": payload.get("summary", "")
+            }),
+            "listings": payload.get("listings", [])
+        }
 
+        # MUST save to /tmp/ to bypass Render's Read-Only security
+        filepath = f"/tmp/dossier_{uuid.uuid4().hex}.pdf"
+        generate_investment_dossier(state_data, filepath)
+
+        return FileResponse(
+            filepath, 
+            media_type="application/pdf", 
+            filename="PropIQ_Sovereign_Dossier.pdf"
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 app.mount("/", StaticFiles(directory="propiq-ui/dist", html=True), name="static")
 
 if __name__ == "__main__":
