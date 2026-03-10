@@ -11,22 +11,24 @@ class PropIQVectorStore:
     Production-grade Vector Store connection for PropIQ Legal Agent.
     Handles embedding generation and Supabase pgvector transactions.
     """
+
     def __init__(self):
         self.supabase_url = os.environ.get("SUPABASE_URL")
         self.supabase_key = os.environ.get("SUPABASE_ANON_KEY")
-        
+
         if not self.supabase_url or not self.supabase_key:
             raise ValueError("CRITICAL: Supabase credentials missing from environment variables.")
-            
+
         # Initialize Supabase Client
         self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
-        
+
         # 384-dimension embedding model matching your Supabase VECTOR(384) schema
         self.embeddings = HuggingFaceInferenceAPIEmbeddings(
             api_key=os.environ.get("HF_TOKEN"),
             model_name="sentence-transformers/all-MiniLM-L6-v2"
-       )
-       self.table_name = "propiq_documents"
+        )
+        
+        self.table_name = "propiq_documents"
 
     def get_store(self) -> SupabaseVectorStore:
         return SupabaseVectorStore(
@@ -35,7 +37,7 @@ class PropIQVectorStore:
             table_name=self.table_name,
             query_name="match_documents"
         )
-        
+
     def add_legal_documents(self, texts: list[str], metadatas: list[dict] = None):
         """Hashes and uploads legal document chunks to Supabase."""
         try:
@@ -58,5 +60,4 @@ class PropIQVectorStore:
             return []
 
 # Singleton instance for the agent to import
-
 vector_db = PropIQVectorStore()
