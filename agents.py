@@ -61,6 +61,7 @@ async def cv_vision_node(state: AgentState) -> dict:
     return {"cv_multiplier": multiplier, "debate_log": [log_entry]}
 
 # ==========================================
+# ==========================================
 # AGENT 3: THE FINANCIAL ANALYST
 # ==========================================
 FINANCIAL_ANALYST_PROMPT = """
@@ -72,8 +73,15 @@ Output ONLY valid JSON in this exact format: {"adjusted_price_aed": <insert_calc
 def financial_analyst_node(state: AgentState) -> dict:
     print(f"▶️ [Agent 3] Financial Analyst: Calculating ML valuations for {state.area}...")
     
-    prediction_data = predict_property_price(state.area, state.bedrooms, state.bedrooms * 800, state.is_offplan)
-    raw_price = prediction_data.get("price", 800000.0)
+    # We pass the flat state variables, NOT state.parsed_query
+    ml = predict_property_price(
+        location_name = state.area,
+        bedrooms      = state.bedrooms,
+        sqft          = state.bedrooms * 800,
+        is_offplan    = state.is_offplan
+    )
+    
+    raw_price = ml.get("price", 800000.0)
     
     user_msg = f"Raw ML Price: {raw_price}\nCV Multiplier: {state.cv_multiplier}"
     parsed = call_groq_with_retry(prompt=user_msg, system=FINANCIAL_ANALYST_PROMPT)
@@ -83,14 +91,14 @@ def financial_analyst_node(state: AgentState) -> dict:
         adjusted_price = raw_price * state.cv_multiplier
         
     log_entry = f"Financial Analyst: Base AED {raw_price:,.2f} | Adjusted AED {adjusted_price:,.2f}."
-    if prediction_data.get("out_of_market"):
+    if ml.get("out_of_market"):
         log_entry += f" [GEOGRAPHY WARNING TRIGGERED]"
     
-    # Write directly to the top-level state
+    # Return directly mapping to AgentState
     return {
         "ml_price": float(adjusted_price), 
-        "out_of_market": prediction_data.get("out_of_market", False),
-        "market_warning": prediction_data.get("market_warning", ""),
+        "out_of_market": ml.get("out_of_market", False),
+        "market_warning": ml.get("market_warning", ""),
         "debate_log": [log_entry]
     }
 

@@ -1,48 +1,90 @@
-import os
-import pickle
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+import os, joblib, numpy as np
+from functools import lru_cache
 
-MODEL_PATH = "models/dubai_model.pkl"
+NON_DUBAI = [
+    "abu dhabi","sharjah","ajman",
+    "fujairah","ras al khaimah","rak","umm al quwain"
+]
 
-def initialize_failsafe_model():
-    print("System Notice: Primary model not found. Initializing Synthetic Dubai Proxy Model...")
-    data = {
-        'location_index': [1, 2, 3, 1, 2, 3, 1, 2, 3, 1] * 10,
-        'bedrooms': [1, 2, 3, 4, 1, 2, 3, 1, 2, 3] * 10,
-        'sqft': [800, 1200, 1800, 2500, 750, 1300, 1900, 850, 1100, 1750] * 10,
-        'price_aed': [1500000, 2500000, 4000000, 6500000, 1400000, 2600000, 4200000, 1600000, 2300000, 3900000] * 10
-    }
-    df = pd.DataFrame(data)
-    X = df[['location_index', 'bedrooms', 'sqft']]
-    y = df['price_aed']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    os.makedirs("models", exist_ok=True)
-    with open(MODEL_PATH, 'wb') as f:
-        pickle.dump(model, f)
-    print("Proxy Model Initialized and Secured.")
+FALLBACK_MAP = {
+    "ras al khaimah": "Jumeirah Village Circle",
+    "rak":            "Jumeirah Village Circle",
+    "abu dhabi":      "Dubai Marina",
+    "sharjah":        "Deira",
+    "ajman":          "Deira",
+    "fujairah":       "Deira",
+    "umm al quwain":  "Deira",
+}
 
-def predict_property_price(location_name: str, bedrooms: int, sqft: float, is_offplan: bool = False) -> dict:
-    if not os.path.exists(MODEL_PATH):
-        initialize_failsafe_model()
-        
-    with open(MODEL_PATH, 'rb') as f:
-        model = pickle.load(f)
-        
-    location_map = {"downtown": 1, "marina": 2, "jvc": 3}
-    loc_idx = location_map.get(str(location_name).lower(), 2) 
-    
-    input_data = pd.DataFrame([[loc_idx, bedrooms, sqft]], columns=['location_index', 'bedrooms', 'sqft'])
-    prediction = float(model.predict(input_data)[0])
-    
-    out_of_market = str(location_name).lower() not in location_map
-    
-    # Return exactly what LangGraph is expecting
+PRICE_FLOOR = 800_000
+
+@lru_cache(maxsize=1)
+def load_model():
+    model   = joblib.load("/tmp/propiq_xgboost_model.pkl")
+    columns = joblib.load("/tmp/propiq_model_columns.pkl")
+    return model, columns
+
+def predict_property_price(
+    location_name: str,
+    bedrooms: int,
+    sqft: float,
+    is_offplan: bool
+) -> dict:
+    print(f"[PREDICTOR v3.0] input: {location_name} {bedrooms}BR {sqft}sqft offplan={is_offplan}")
+
+    area_raw = str(location_name or "Dubai Marina").strip()
+    area_lower = area_raw.lower()
+
+    out_of_market = any(k in area_lower for k in NON_DUBAI)
+
+    if out_of_market:
+        area_mapped = next(
+            (v for k,v in FALLBACK_MAP.items() if k in area_lower),
+            "Jumeirah Village Circle"
+        )
+        market_warning = (
+            f"'{area_raw}' is outside Dubai. "
+            f"Mapped to '{area_mapped}' for indicative valuation. "
+            f"Treat with caution — non-Dubai pricing applies."
+        )
+    else:
+        area_mapped = area_raw
+        market_warning = None
+
+    try:
+        model, columns = load_model()
+
+        row = {col: 0 for col in columns}
+
+        area_col = f"area_{area_mapped}"
+        if area_col in row:
+            row[area_col] = 1
+        else:
+            fallback_col = "area_Jumeirah Village Circle"
+            if fallback_col in row:
+                row[fallback_col] = 1
+
+        if "bedrooms" in row:
+            row["bedrooms"] = int(bedrooms)
+        if "size_sqft" in row:
+            row["size_sqft"] = float(sqft)
+        if "is_offplan" in row:
+            row["is_offplan"] = int(is_offplan)
+
+        X = np.array([[row[col] for col in columns]])
+        price = float(model.predict(X)[0])
+
+    except Exception as e:
+        print(f"[PREDICTOR] model failed: {e} — using floor")
+        price = PRICE_FLOOR
+
+    if price < PRICE_FLOOR:
+        price = PRICE_FLOOR
+
+    print(f"[PREDICTOR v3.0] output: AED {price:,.0f} OOD={out_of_market}")
+
     return {
-        "price": prediction,
-        "out_of_market": out_of_market,
-        "market_warning": "Out of market, mapped to nearest comparable." if out_of_market else ""
+        "price":          price,
+        "out_of_market":  out_of_market,
+        "market_warning": market_warning,
     }
