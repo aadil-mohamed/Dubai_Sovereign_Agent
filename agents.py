@@ -7,6 +7,7 @@ from predictor_tool import predict_property_price
 from vision_provider import analyze_image 
 from tavily_cache import search_comparables
 from groq_client import call_groq_with_retry
+from typing import Optional
 
 # ==========================================
 # AGENT 1: THE QUERY PARSER
@@ -27,11 +28,25 @@ Convert budget strings to integers ("3M" -> 3000000). Output ONLY valid JSON.
 def query_parser_node(state: AgentState) -> dict:
     print("▶️ [Agent 1] Query Parser: Normalizing input...")
     parsed = call_groq_with_retry(prompt=state.query, system=QUERY_PARSER_PROMPT)
+    
+    # BRUTAL FIX: Intercept 'null' or weird strings from the LLM
+    try:
+        budget = float(parsed.get("budget_aed") or 0.0)
+    except (ValueError, TypeError):
+        budget = 0.0
+        
+    try:
+        beds = int(parsed.get("bedrooms") or 1)
+    except (ValueError, TypeError):
+        beds = 1
+
+    area = parsed.get("area")
+    
     return {
-        "area": parsed.get("area", "Dubai Marina"),
-        "budget_aed": parsed.get("budget_aed", 0),
-        "bedrooms": parsed.get("bedrooms", 1),
-        "is_offplan": parsed.get("is_offplan") == True
+        "area": str(area) if area else "Dubai Marina",
+        "budget_aed": budget,
+        "bedrooms": beds,
+        "is_offplan": bool(parsed.get("is_offplan"))
     }
 
 # ==========================================
