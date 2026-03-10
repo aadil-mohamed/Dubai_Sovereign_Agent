@@ -2,13 +2,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from typing import Optional
 import uvicorn
 
 app = FastAPI()
 
 class Query(BaseModel):
     query: str
-    image: str = None
+    image: Optional[str] = None
 
 @app.get("/health")
 async def health():
