@@ -103,6 +103,7 @@ def financial_analyst_node(state: AgentState) -> dict:
     }
 
 # ==========================================
+# ==========================================
 # AGENT 4: THE MARKET SCOUT
 # ==========================================
 MARKET_SCOUT_PROMPT = """
@@ -114,7 +115,15 @@ Output ONLY valid JSON.
 
 def market_scout_node(state: AgentState) -> dict:
     print("▶️ [Agent 4] Market Scout: Analyzing live web listings...")
-    raw_listings = search_comparables(state.area, state.bedrooms, state.budget_aed, state.is_offplan)
+    
+    # THE FIX: Combine the 4 arguments into a single search string for the old Tavily tool
+    search_term = f"{state.bedrooms} bedroom property in {state.area} under {state.budget_aed} AED"
+    if state.is_offplan:
+        search_term += " off-plan"
+        
+    # Now we pass exactly 1 argument
+    raw_listings = search_comparables(search_term)
+    
     user_msg = f"Raw Scraped Data:\n{raw_listings}"
     parsed = call_groq_with_retry(prompt=user_msg, system=MARKET_SCOUT_PROMPT)
     median_price = parsed.get("median_price_aed", 0)
