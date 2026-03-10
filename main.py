@@ -1,10 +1,21 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import uvicorn, asyncio
+import uvicorn
+import asyncio
+# PROACTIVE FIX: Pre-import the graph engine
+from graph import build_graph 
 
 app = FastAPI()
+
+# Global variable to hold the initialized graph
+GRAPH_ENGINE = None
+
+@app.on_event("startup")
+async def startup_event():
+    global GRAPH_ENGINE
+    print("IGNITING SOVEREIGN INTELLIGENCE ENGINE...")
+    GRAPH_ENGINE = build_graph()
 
 class Query(BaseModel):
     query: str
@@ -12,12 +23,17 @@ class Query(BaseModel):
 
 @app.post("/api/analyze")
 async def analyze(q: Query):
-    from agents import build_graph
-    graph = build_graph()
-    result = await graph.ainvoke({
+    global GRAPH_ENGINE
+    
+    # If for some reason graph isn't built yet, build it
+    if GRAPH_ENGINE is None:
+        GRAPH_ENGINE = build_graph()
+        
+    result = await GRAPH_ENGINE.ainvoke({
         "raw_query": q.query,
         "image_bytes": None
     })
+    
     return {
         "grade": result["supervisor_result"]["investment_grade"],
         "baseVal": result["ml_result"]["base_price_aed"],
